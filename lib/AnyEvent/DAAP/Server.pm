@@ -1,6 +1,5 @@
 package AnyEvent::DAAP::Server;
 use Any::Moose;
-use AnyEvent::HTTPD;
 use Net::Rendezvous::Publish;
 use Net::DAAP::DMAP qw(dmap_pack);
 use AnyEvent::Socket;
@@ -8,6 +7,7 @@ use AnyEvent::Handle;
 use HTTP::Request;
 use HTTP::Response;
 use Router::Simple;
+use URI::QueryParam;
 
 our $VERSION = '0.01';
 
@@ -66,7 +66,7 @@ has router => (
     default => sub { Router::Simple->new },
 );
 
-has db_id => is => 'rw', default => '13950142391337751523';
+has db_id => is => 'rw', default => '13950142391337751523'; # FIXME copypaste
 has tracks => is => 'rw', default => sub { +{} };
 
 __PACKAGE__->meta->make_immutable;
@@ -84,6 +84,15 @@ sub setup {
     $self->router->connect(
         '/databases/{database_id}/items' => { method => '_database_items' },
     );
+    $self->router->connect(
+        '/databases/{database_id}/containers' => { method => '_database_containers' },
+    );
+    $self->router->connect(
+        '/databases/{database_id}/containers/{container_id}/items' => { method => '_database_container_items' },
+    );
+    $self->router->connect(
+        '/databases/{database_id}/items/{item_id}.*' => { method => '_database_item' },
+    );
 
     $self->publish;
     tcp_server undef, $self->port, sub {
@@ -96,15 +105,13 @@ sub setup {
             $handle->push_read(
                 regex => qr<\r\n\r\n>, sub {
                     my ($handle, $data) = @_;
-                    warn $data;
                     my $request = HTTP::Request->parse($data);
                     my $path = $request->uri->path;
-
-                    warn $path;
                     my $p = $self->router->match($path) || {};
                     my $method = $p->{method} || $path;
                     $method =~ s<[/-]><_>g;
-                    my $content = $self->$method($p);
+                    my $content = $self->$method($request, $p);
+                    # TODO make async
                     my $response = HTTP::Response->new(
                         200, 'OK', [
                             'Content-Type' => 'application/x-dmap-tagged',
@@ -146,13 +153,14 @@ sub _login {
     return dmap_pack [[
         'dmap.loginresponse' => [
             [ 'dmap.status'    => 200 ],
-            [ 'dmap.sessionid' =>  42 ], # XXX magic constant
+            [ 'dmap.sessionid' =>  42 ], # FIXME magic constant
         ]
     ]];
 }
 
 sub _update {
-    my $self = shift;
+    my ($self, $req) = @_;
+    # TODO block here by revision-nubmer
     return dmap_pack [[
         'dmap.updateresponse' => [
             [ 'dmap.status'         => 200 ],
@@ -171,7 +179,7 @@ sub _databases {
             [ 'dmap.returnedcount' => 1 ],
             [ 'dmap.listing' => [
                 [ 'dmap.listingitem' => [
-                    [ 'dmap.itemid' =>  35 ], # XXX magic
+                    [ 'dmap.itemid' =>  35 ], # FIXME magic
                     [ 'dmap.persistentid' => $self->db_id ],
                     [ 'dmap.itemname' => $self->name ],
                     [ 'dmap.itemcount' => scalar keys %{ $self->tracks } ],
@@ -182,9 +190,77 @@ sub _databases {
     ]];
 }
 
+sub _format_tracks_as_dmap {
+    my ($self, $req) = @_;
+    my @fields = qw(dmap.itemkind dmap.itemid dmap.itemname);
+    push @fields, split /,|%2C/i, scalar $req->uri->query_param('meta') || '';
+
+    my @tracks;
+    foreach my $track (values %{ $self->tracks }) {
+        push @tracks, [
+            'dmap.listingitem' => [ map { [ $_ => $track->_dmap_field($_) ] } @fields ]
+        ]
+    }
+
+    return @tracks;
+}
+
 sub _database_items {
-    my ($self, $args) = @_;
+    my ($self, $req, $args) = @_;
     # $args->{database_id};
+
+    my @tracks = $self->_format_tracks_as_dmap($req);
+    return dmap_pack [[
+        'daap.databasesongs' => [
+            [ 'dmap.status' => 200 ],
+            [ 'dmap.updatetype' => 0 ],
+            [ 'dmap.specifiedtotalcount' => scalar @tracks ],
+            [ 'dmap.returnedcount' => scalar @tracks ],
+            [ 'dmap.listing' => \@tracks ]
+        ]
+    ]];
+}
+
+sub _database_containers {
+    my ($self, $req, $args) = @_;
+    # $args->{database_id};
+
+    # TODO
+
+    my $playlists = [[
+        'dmap.listingitem' => [
+            [ 'dmap.itemid'       => 39 ],
+            [ 'dmap.persistentid' => '13950142391337751524' ],
+            [ 'dmap.itemname'     => $self->name ],
+            [ 'com.apple.itunes.smart-playlist' => 0 ],
+            [ 'dmap.itemcount'    => scalar keys %{ $self->tracks } ],
+        ]
+    ]];
+    return dmap_pack [[
+        'daap.databaseplaylists' => [
+            [ 'dmap.status'              => 200 ],
+            [ 'dmap.updatetype'          =>   0 ],
+            [ 'dmap.specifiedtotalcount' =>   1 ],
+            [ 'dmap.returnedcount'       =>   1 ],
+            [ 'dmap.listing'             => $playlists ],
+        ]
+    ]];
+}
+
+sub _database_container_items {
+    my ($self, $req, $args) = @_;
+    # $args->{database_id}, $args->{container_id}
+
+    my @tracks = $self->_format_tracks_as_dmap($req);
+    return dmap_pack [[
+        'daap.playlistsongs' => [
+            [ 'dmap.status'              => 200 ],
+            [ 'dmap.updatetype'          => 0 ],
+            [ 'dmap.specifiedtotalcount' => scalar @tracks ],
+            [ 'dmap.returnedcount'       => scalar @tracks ],
+            [ 'dmap.listing'             => \@tracks ]
+        ]
+    ]];
 }
 
 1;
