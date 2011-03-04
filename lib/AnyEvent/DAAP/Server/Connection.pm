@@ -1,15 +1,9 @@
-package AnyEvent::DAAP::Server::Session;
+package AnyEvent::DAAP::Server::Connection;
 use Any::Moose;
 use AnyEvent;
 use AnyEvent::Handle;
 use Net::DAAP::DMAP qw(dmap_pack);
 use HTTP::Response;
-
-has id => (
-    is  => 'rw',
-    isa => 'Int',
-    default => sub { ++our $id },
-);
 
 has handle => (
     is  => 'rw',

@@ -1,6 +1,6 @@
 package AnyEvent::DAAP::Server;
 use Any::Moose;
-use AnyEvent::DAAP::Server::Session;
+use AnyEvent::DAAP::Server::Connection;
 use AnyEvent::Socket;
 use AnyEvent::Handle;
 use Net::Rendezvous::Publish;
@@ -64,10 +64,10 @@ has revision => (
     default => 1,
 );
 
-has sessions => (
+has connections => (
     is  => 'rw',
-    isa => 'HashRef[AnyEvent::DAAP::Server::Session]',
-    default => sub { +{} },
+    isa => 'ArrayRef[AnyEvent::DAAP::Server::Connection]',
+    default => sub { +[] },
 );
 
 __PACKAGE__->meta->make_immutable;
@@ -99,8 +99,8 @@ sub setup {
 
     tcp_server undef, $self->port, sub {
         my ($fh, $host, $port) = @_;
-        my $session = AnyEvent::DAAP::Server::Session->new(server => $self, fh => $fh);
-        $session->handle->on_read(sub {
+        my $connection = AnyEvent::DAAP::Server::Connection->new(server => $self, fh => $fh);
+        $connection->handle->on_read(sub {
             my ($handle) = @_;
             $handle->push_read(
                 regex => qr<\r\n\r\n>, sub {
@@ -110,18 +110,18 @@ sub setup {
                     my $p = $self->router->match($path) || {};
                     my $method = $p->{method} || $path;
                     $method =~ s<[/-]><_>g;
-                    $self->$method($session, $request, $p);
+                    $self->$method($connection, $request, $p);
                 }
             );
         });
-        $self->sessions->{ $session->id } = $session;
+        push @{ $self->connections }, $connection;
     };
 }
 
 sub database_updated {
     my $self = shift;
-    foreach my $session (values %{ $self->sessions }) {
-        $session->pause_cv->send if $session->pause_cv;
+    foreach my $connection (@{ $self->connections }) {
+        $connection->pause_cv->send if $connection->pause_cv;
     }
     $self->{revision}++;
 }
@@ -134,8 +134,8 @@ sub add_track {
 ### Handlers
 
 sub _server_info {
-    my ($self, $session) = @_;
-    $session->respond_dmap([[
+    my ($self, $connection) = @_;
+    $connection->respond_dmap([[
         'dmap.serverinforesponse' => [
             [ 'dmap.status'             => 200 ],
             [ 'dmap.protocolversion'    => 2 ],
@@ -157,21 +157,21 @@ sub _server_info {
 }
 
 sub _login {
-    my ($self, $session) = @_;
-    $session->respond_dmap([[
+    my ($self, $connection) = @_;
+    $connection->respond_dmap([[
         'dmap.loginresponse' => [
             [ 'dmap.status'    => 200 ],
-            [ 'dmap.sessionid' => $session->id ],
+            [ 'dmap.sessionid' => 42 ], # XXX magic constant
         ]
     ]]);
 }
 
 sub _update {
-    my ($self, $session, $req) = @_;
+    my ($self, $connection, $req) = @_;
 
     if ($req->uri->query_param('delta')) {
-        my $cv = $session->pause(sub {
-            $session->respond_dmap([[
+        my $cv = $connection->pause(sub {
+            $connection->respond_dmap([[
                 'dmap.updateresponse' => [
                     [ 'dmap.status'         => 200 ],
                     [ 'dmap.serverrevision' =>  $self->revision ],
@@ -180,7 +180,7 @@ sub _update {
         });
         my $w; $w = AE::timer 60, 0, sub { undef $w; $cv->send };
     } else {
-        $session->respond_dmap([[
+        $connection->respond_dmap([[
             'dmap.updateresponse' => [
                 [ 'dmap.status'         => 200 ],
                 [ 'dmap.serverrevision' =>  $self->revision ],
@@ -190,9 +190,9 @@ sub _update {
 }
 
 sub _databases {
-    my ($self, $session) = @_;
+    my ($self, $connection) = @_;
 
-    $session->respond_dmap([[
+    $connection->respond_dmap([[
         'daap.serverdatabases' => [
             [ 'dmap.status' => 200 ],
             [ 'dmap.updatetype' =>  0 ],
@@ -212,11 +212,11 @@ sub _databases {
 }
 
 sub _database_items {
-    my ($self, $session, $req, $args) = @_;
+    my ($self, $connection, $req, $args) = @_;
     # $args->{database_id};
 
     my @tracks = $self->_format_tracks_as_dmap($req);
-    $session->respond_dmap([[
+    $connection->respond_dmap([[
         'daap.databasesongs' => [
             [ 'dmap.status' => 200 ],
             [ 'dmap.updatetype' => 0 ],
@@ -228,7 +228,7 @@ sub _database_items {
 }
 
 sub _database_containers {
-    my ($self, $session, $req, $args) = @_;
+    my ($self, $connection, $req, $args) = @_;
     # $args->{database_id};
 
     # TODO
@@ -241,7 +241,7 @@ sub _database_containers {
             [ 'dmap.itemcount'    => scalar keys %{ $self->tracks } ],
         ]
     ]];
-    $session->respond_dmap([[
+    $connection->respond_dmap([[
         'daap.databaseplaylists' => [
             [ 'dmap.status'              => 200 ],
             [ 'dmap.updatetype'          =>   0 ],
@@ -253,11 +253,11 @@ sub _database_containers {
 }
 
 sub _database_container_items {
-    my ($self, $session, $req, $args) = @_;
+    my ($self, $connection, $req, $args) = @_;
     # $args->{database_id}, $args->{container_id}
 
     my @tracks = $self->_format_tracks_as_dmap($req);
-    $session->respond_dmap([[
+    $connection->respond_dmap([[
         'daap.playlistsongs' => [
             [ 'dmap.status'              => 200 ],
             [ 'dmap.updatetype'          => 0 ],
@@ -269,10 +269,10 @@ sub _database_container_items {
 }
 
 sub _database_item {
-    my ($self, $session, $req, $args) = @_;
+    my ($self, $connection, $req, $args) = @_;
     # $args->{database_id}, $args->{item_id}
     my $track = $self->tracks->{ $args->{item_id} } or die; # TODO 404
-    $track->stream($session);
+    $track->stream($connection);
 }
 
 sub _format_tracks_as_dmap {
