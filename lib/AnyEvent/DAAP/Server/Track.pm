@@ -30,4 +30,12 @@ sub _dmap_field {
     return $self->{$name};
 }
 
+sub stream {
+    my ($self, $session) = @_;
+    die 'implement';
+    # stream data into $session->handle
+}
+
+# XXX dmap_itemid should not exceed 3 bytes long
+
 1;
