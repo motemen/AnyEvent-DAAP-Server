@@ -45,12 +45,17 @@ no Any::Moose;
 sub respond_dmap {
     my ($self, $dmap) = @_;
     my $content = dmap_pack $dmap;
-    my $response = HTTP::Response->new(
+    $self->respond(
         200, 'OK', [
             'Content-Type' => 'application/x-dmap-tagged',
             'Content-Length' => length($content)
         ], $content,
     );
+}
+
+sub respond {
+    my $self = shift;
+    my $response = HTTP::Response->new(@_);
     $self->handle->push_write('HTTP/1.1 ' . $response->as_string("\r\n"));
 }
 

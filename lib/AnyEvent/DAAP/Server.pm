@@ -50,11 +50,20 @@ has router => (
     default => sub { Router::Simple->new },
 );
 
-has db_id => is => 'rw', default => '13950142391337751523'; # FIXME copypaste
+has db_id => (
+    is => 'rw',
+    default => '13950142391337751523', # XXX magic value (from Net::DAAP::Server)
+);
 
 has tracks => (
     is  => 'rw',
     isa => 'HashRef[AnyEvent::DAAP::Server::Track]',
+    default => sub { +{} },
+);
+
+has playlists => (
+    is  => 'rw',
+    isa => 'HashRef[AnyEvent::DAAP::Server::Playlist]',
     default => sub { +{} },
 );
 
@@ -131,6 +140,11 @@ sub add_track {
     $self->tracks->{ $track->dmap_itemid } = $track;
 }
 
+sub add_playlist {
+    my ($self, $playlist) = @_;
+    $self->playlists->{ $playlist->dmap_itemid } = $playlist;
+}
+
 ### Handlers
 
 sub _server_info {
@@ -161,7 +175,7 @@ sub _login {
     $connection->respond_dmap([[
         'dmap.loginresponse' => [
             [ 'dmap.status'    => 200 ],
-            [ 'dmap.sessionid' => 42 ], # XXX magic constant
+            [ 'dmap.sessionid' => 42 ], # XXX magic
         ]
     ]]);
 }
@@ -200,7 +214,7 @@ sub _databases {
             [ 'dmap.returnedcount' => 1 ],
             [ 'dmap.listing' => [
                 [ 'dmap.listingitem' => [
-                    [ 'dmap.itemid' =>  35 ], # FIXME magic
+                    [ 'dmap.itemid' =>  35 ], # XXX magic
                     [ 'dmap.persistentid' => $self->db_id ],
                     [ 'dmap.itemname' => $self->name ],
                     [ 'dmap.itemcount' => scalar keys %{ $self->tracks } ],
@@ -215,7 +229,7 @@ sub _database_items {
     my ($self, $connection, $req, $args) = @_;
     # $args->{database_id};
 
-    my @tracks = $self->_format_tracks_as_dmap($req);
+    my @tracks = $self->_format_tracks_as_dmap($req, [ values %{ $self->tracks } ]);
     $connection->respond_dmap([[
         'daap.databasesongs' => [
             [ 'dmap.status' => 200 ],
@@ -231,7 +245,6 @@ sub _database_containers {
     my ($self, $connection, $req, $args) = @_;
     # $args->{database_id};
 
-    # TODO
     my $playlists = [[
         'dmap.listingitem' => [
             [ 'dmap.itemid'       => 39 ],
@@ -239,8 +252,9 @@ sub _database_containers {
             [ 'dmap.itemname'     => $self->name ],
             [ 'com.apple.itunes.smart-playlist' => 0 ],
             [ 'dmap.itemcount'    => scalar keys %{ $self->tracks } ],
-        ]
-    ]];
+        ]],
+        map { $_->as_dmap_struct } values %{ $self->playlists }
+    ];
     $connection->respond_dmap([[
         'daap.databaseplaylists' => [
             [ 'dmap.status'              => 200 ],
@@ -256,7 +270,12 @@ sub _database_container_items {
     my ($self, $connection, $req, $args) = @_;
     # $args->{database_id}, $args->{container_id}
 
-    my @tracks = $self->_format_tracks_as_dmap($req);
+    # TODO global playlist
+    my $playlist = $self->playlists->{ $args->{container_id} }
+        # or return $connection->respond(404);
+        or return $self->_database_items($connection, $req, $args); 
+
+    my @tracks = $self->_format_tracks_as_dmap($req, scalar $playlist->tracks);
     $connection->respond_dmap([[
         'daap.playlistsongs' => [
             [ 'dmap.status'              => 200 ],
@@ -271,17 +290,20 @@ sub _database_container_items {
 sub _database_item {
     my ($self, $connection, $req, $args) = @_;
     # $args->{database_id}, $args->{item_id}
-    my $track = $self->tracks->{ $args->{item_id} } or die; # TODO 404
+
+    my $track = $self->tracks->{ $args->{item_id} }
+        or return $connection->respond(404);
+
     $track->stream($connection);
 }
 
 sub _format_tracks_as_dmap {
-    my ($self, $req) = @_;
+    my ($self, $req, $tracks) = @_;
 
     my @fields = ( qw(dmap.itemkind dmap.itemid dmap.itemname), split /,|%2C/i, scalar $req->uri->query_param('meta') || '' );
 
     my @tracks;
-    foreach my $track (values %{ $self->tracks }) {
+    foreach my $track (@$tracks) {
         push @tracks, [
             'dmap.listingitem' => [ map { [ $_ => $track->_dmap_field($_) ] } @fields ]
         ]
