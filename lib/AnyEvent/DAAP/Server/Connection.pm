@@ -47,8 +47,8 @@ sub respond_dmap {
     my $content = dmap_pack $dmap;
     $self->respond(
         200, 'OK', [
-            'Content-Type' => 'application/x-dmap-tagged',
-            'Content-Length' => length($content)
+            'Content-Type'   => 'application/x-dmap-tagged',
+            'Content-Length' => length($content),
         ], $content,
     );
 }

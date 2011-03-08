@@ -165,21 +165,21 @@ sub _server_info {
     my ($self, $connection) = @_;
     $connection->respond_dmap([[
         'dmap.serverinforesponse' => [
-            [ 'dmap.status'             => 200 ],
-            [ 'dmap.protocolversion'    => 2 ],
-            [ 'daap.protocolversion'    => '3.10' ],
-            [ 'dmap.itemname'           => $self->name ],
-            [ 'dmap.loginrequired'      => 0 ],
-            [ 'dmap.timeoutinterval'    => 1800 ],
-            [ 'dmap.supportsautologout' => 0 ],
-            [ 'dmap.supportsupdate'     => 0 ],
+            [ 'dmap.status'                => 200 ],
+            [ 'dmap.protocolversion'       => 2 ],
+            [ 'daap.protocolversion'       => '3.11' ],
+            [ 'dmap.itemname'              => $self->name ],
+            [ 'dmap.loginrequired'         => 1 ],
+            [ 'dmap.timeoutinterval'       => 1800 ],
+            [ 'dmap.supportsautologout'    => 0 ],
+            [ 'dmap.supportsupdate'        => 1 ],
             [ 'dmap.supportspersistentids' => 0 ],
-            [ 'dmap.supportsextensions' => 0 ],
-            [ 'dmap.supportsbrowse'     => 0 ],
-            [ 'dmap.supportsquery'      => 0 ],
-            [ 'dmap.supportsindex'      => 0 ],
-            [ 'dmap.supportsresolve'    => 0 ],
-            [ 'dmap.databasescount'     => 1 ],
+            [ 'dmap.supportsextensions'    => 1 ],
+            [ 'dmap.supportsbrowse'        => 1 ],
+            [ 'dmap.supportsquery'         => 1 ],
+            [ 'dmap.supportsindex'         => 1 ],
+            [ 'dmap.supportsresolve'       => 0 ],
+            [ 'dmap.databasescount'        => 1 ],
         ]
     ]]);
 }
@@ -202,7 +202,7 @@ sub _update {
             $connection->respond_dmap([[
                 'dmap.updateresponse' => [
                     [ 'dmap.status'         => 200 ],
-                    [ 'dmap.serverrevision' =>  $self->revision ],
+                    [ 'dmap.serverrevision' => $self->revision ],
                 ]
             ]]);
         });
@@ -211,7 +211,7 @@ sub _update {
         $connection->respond_dmap([[
             'dmap.updateresponse' => [
                 [ 'dmap.status'         => 200 ],
-                [ 'dmap.serverrevision' =>  $self->revision ],
+                [ 'dmap.serverrevision' => $self->revision ],
             ]
         ]]);
     }
@@ -264,9 +264,9 @@ sub _database_containers {
     $connection->respond_dmap([[
         'daap.databaseplaylists' => [
             [ 'dmap.status'              => 200 ],
-            [ 'dmap.updatetype'          =>   0 ],
-            [ 'dmap.specifiedtotalcount' =>   1 ],
-            [ 'dmap.returnedcount'       =>   1 ],
+            [ 'dmap.updatetype'          => 0 ],
+            [ 'dmap.specifiedtotalcount' => 1 ],
+            [ 'dmap.returnedcount'       => 1 ],
             [ 'dmap.listing'             => \@playlists ],
         ]
     ]]);
