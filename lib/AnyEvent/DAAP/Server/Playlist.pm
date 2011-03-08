@@ -7,6 +7,12 @@ our @Attributes = qw(
 
 has $_ => is => 'rw' for @Attributes;
 
+has dmap_itemid => (
+    is  => 'rw',
+    isa => 'Int',
+    default => sub { 0+$_[0] & 0xFFFFFF },
+);
+
 has tracks => (
     is  => 'rw',
     isa => 'ArrayRef[AnyEvent::DAAP::Server::Track]',

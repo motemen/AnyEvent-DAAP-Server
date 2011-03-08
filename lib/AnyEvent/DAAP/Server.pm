@@ -61,6 +61,12 @@ has tracks => (
     default => sub { +{} },
 );
 
+has global_playlist => (
+    is  => 'rw',
+    isa => 'AnyEvent::DAAP::Server::Playlist',
+    default => sub { AnyEvent::DAAP::Server::Playlist->new },
+);
+
 has playlists => (
     is  => 'rw',
     isa => 'HashRef[AnyEvent::DAAP::Server::Playlist]',
@@ -82,6 +88,11 @@ has connections => (
 __PACKAGE__->meta->make_immutable;
 
 no Any::Moose;
+
+sub BUILD {
+    my $self = shift;
+    $self->add_playlist($self->global_playlist);
+}
 
 sub publish {
     my $self = shift;
@@ -138,6 +149,7 @@ sub database_updated {
 sub add_track {
     my ($self, $track) = @_;
     $self->tracks->{ $track->dmap_itemid } = $track;
+    $self->global_playlist->add_track($track);
 }
 
 sub add_playlist {
@@ -245,15 +257,8 @@ sub _database_containers {
     my ($self, $connection, $req, $args) = @_;
     # $args->{database_id};
 
-    my $playlists = [[
-        'dmap.listingitem' => [
-            [ 'dmap.itemid'       => 39 ],
-            [ 'dmap.persistentid' => '13950142391337751524' ],
-            [ 'dmap.itemname'     => $self->name ],
-            [ 'com.apple.itunes.smart-playlist' => 0 ],
-            [ 'dmap.itemcount'    => scalar keys %{ $self->tracks } ],
-        ]],
-        map { $_->as_dmap_struct } values %{ $self->playlists }
+    my $playlists = [
+        map { $_->as_dmap_struct } $self->global_playlist, values %{ $self->playlists }
     ];
     $connection->respond_dmap([[
         'daap.databaseplaylists' => [
@@ -272,8 +277,7 @@ sub _database_container_items {
 
     # TODO global playlist
     my $playlist = $self->playlists->{ $args->{container_id} }
-        # or return $connection->respond(404);
-        or return $self->_database_items($connection, $req, $args); 
+        or return $connection->respond(404);
 
     my @tracks = $self->_format_tracks_as_dmap($req, scalar $playlist->tracks);
     $connection->respond_dmap([[
