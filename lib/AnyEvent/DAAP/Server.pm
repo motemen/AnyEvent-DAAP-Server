@@ -44,12 +44,6 @@ sub _build_rendezvous_service {
     );
 }
 
-has router => (
-    is  => 'rw',
-    isa => 'Router::Simple',
-    default => sub { Router::Simple->new },
-);
-
 has db_id => (
     is => 'rw',
     default => '13950142391337751523', # XXX magic value (from Net::DAAP::Server)
@@ -83,6 +77,12 @@ has connections => (
     is  => 'rw',
     isa => 'ArrayRef[AnyEvent::DAAP::Server::Connection]',
     default => sub { +[] },
+);
+
+has router => (
+    is  => 'rw',
+    isa => 'Router::Simple',
+    default => sub { Router::Simple->new },
 );
 
 __PACKAGE__->meta->make_immutable;
@@ -146,15 +146,17 @@ sub database_updated {
     $self->{revision}++;
 }
 
+# XXX dmap_itemid is used as only its lower 3 bytes
+
 sub add_track {
     my ($self, $track) = @_;
-    $self->tracks->{ $track->dmap_itemid } = $track;
+    $self->tracks->{ $track->dmap_itemid & 0xFFFFFF } = $track;
     $self->global_playlist->add_track($track);
 }
 
 sub add_playlist {
     my ($self, $playlist) = @_;
-    $self->playlists->{ $playlist->dmap_itemid } = $playlist;
+    $self->playlists->{ $playlist->dmap_itemid & 0xFFFFFF } = $playlist;
 }
 
 ### Handlers
@@ -220,16 +222,16 @@ sub _databases {
 
     $connection->respond_dmap([[
         'daap.serverdatabases' => [
-            [ 'dmap.status' => 200 ],
-            [ 'dmap.updatetype' =>  0 ],
-            [ 'dmap.specifiedtotalcount' =>  1 ],
-            [ 'dmap.returnedcount' => 1 ],
+            [ 'dmap.status'              => 200 ],
+            [ 'dmap.updatetype'          => 0 ],
+            [ 'dmap.specifiedtotalcount' => 1 ],
+            [ 'dmap.returnedcount'       => 1 ],
             [ 'dmap.listing' => [
                 [ 'dmap.listingitem' => [
-                    [ 'dmap.itemid' =>  35 ], # XXX magic
-                    [ 'dmap.persistentid' => $self->db_id ],
-                    [ 'dmap.itemname' => $self->name ],
-                    [ 'dmap.itemcount' => scalar keys %{ $self->tracks } ],
+                    [ 'dmap.itemid'         =>  35 ], # XXX magic
+                    [ 'dmap.persistentid'   => $self->db_id ],
+                    [ 'dmap.itemname'       => $self->name ],
+                    [ 'dmap.itemcount'      => scalar keys %{ $self->tracks } ],
                     [ 'dmap.containercount' =>  1 ],
                 ] ],
             ] ],
@@ -244,11 +246,11 @@ sub _database_items {
     my @tracks = $self->_format_tracks_as_dmap($req, [ values %{ $self->tracks } ]);
     $connection->respond_dmap([[
         'daap.databasesongs' => [
-            [ 'dmap.status' => 200 ],
-            [ 'dmap.updatetype' => 0 ],
+            [ 'dmap.status'              => 200 ],
+            [ 'dmap.updatetype'          => 0 ],
             [ 'dmap.specifiedtotalcount' => scalar @tracks ],
-            [ 'dmap.returnedcount' => scalar @tracks ],
-            [ 'dmap.listing' => \@tracks ]
+            [ 'dmap.returnedcount'       => scalar @tracks ],
+            [ 'dmap.listing'             => \@tracks ]
         ]
     ]]);
 }
@@ -257,16 +259,15 @@ sub _database_containers {
     my ($self, $connection, $req, $args) = @_;
     # $args->{database_id};
 
-    my $playlists = [
-        map { $_->as_dmap_struct } $self->global_playlist, values %{ $self->playlists }
-    ];
+    my @playlists = map { $_->as_dmap_struct } $self->global_playlist, values %{ $self->playlists };
+
     $connection->respond_dmap([[
         'daap.databaseplaylists' => [
             [ 'dmap.status'              => 200 ],
             [ 'dmap.updatetype'          =>   0 ],
             [ 'dmap.specifiedtotalcount' =>   1 ],
             [ 'dmap.returnedcount'       =>   1 ],
-            [ 'dmap.listing'             => $playlists ],
+            [ 'dmap.listing'             => \@playlists ],
         ]
     ]]);
 }
@@ -275,7 +276,6 @@ sub _database_container_items {
     my ($self, $connection, $req, $args) = @_;
     # $args->{database_id}, $args->{container_id}
 
-    # TODO global playlist
     my $playlist = $self->playlists->{ $args->{container_id} }
         or return $connection->respond(404);
 

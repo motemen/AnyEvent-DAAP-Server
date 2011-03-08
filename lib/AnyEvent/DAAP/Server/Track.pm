@@ -22,6 +22,12 @@ our @Attributes = qw(
     dmap_containeritemid
 );
 
+has dmap_itemid => (
+    is  => 'rw',
+    isa => 'Int',
+    default => sub { 0+$_[0] & 0xFFFFFF },
+);
+
 has $_, is => 'rw' for @Attributes;
 
 __PACKAGE__->meta->make_immutable;
@@ -39,7 +45,5 @@ sub stream {
     die 'implement';
     # stream data into $session->handle
 }
-
-# XXX dmap_itemid should not exceed 3 bytes long
 
 1;

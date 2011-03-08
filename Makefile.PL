@@ -9,9 +9,9 @@ requires 'AnyEvent::Socket';
 requires 'AnyEvent::Handle';
 requires 'Net::Rendezvous::Publish';
 requires 'Net::DAAP::DMAP';
+requires 'Router::Simple';
 requires 'HTTP::Request';
 requires 'HTTP::Response';
-requires 'Router::Simple';
 requires 'URI::QueryParam';
 
 requires 'MP3::Info';

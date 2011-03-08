@@ -16,8 +16,6 @@ my $w; $w = AE::timer 1, 0, sub {
         my $dir = dirname $file;
         my $playlist = $playlist{$dir} ||= do {
             my $playlist = AnyEvent::DAAP::Server::Playlist->new(
-                dmap_itemid => [ stat $dir ]->[1],
-                dmap_persistentid => [ stat $dir ]->[1],
                 dmap_itemname => $dir,
             );
             $daap->add_playlist($playlist);
