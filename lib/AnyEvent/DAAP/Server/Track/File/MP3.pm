@@ -79,22 +79,17 @@ sub BUILD {
 
 sub allow_range { 1 }
 
-sub data_cb {
-    my ($self, $cb, $start, $end) = @_;
+sub data {
+    my ($self, $start) = @_;
 
     open my $fh, '<', $self->file or die $!; # TODO error handling
     my $data = do { local $/; <$fh> };
     
-    if (!defined $start) {
-        $cb->($data);
-        return;
+    unless (defined $start) {
+        return $data;
     }
 
-    my $total = length $data;
-    $end ||= $total;
-    $start += $total if $start < 0;
-    $data = substr($data, $start, $end);
-    $cb->($data, $start, $end, $total);
+    return substr($data, $start);
 }
 
 1;

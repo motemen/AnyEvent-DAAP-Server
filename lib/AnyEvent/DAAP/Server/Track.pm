@@ -42,50 +42,54 @@ sub _dmap_field {
 
 sub allow_range { 0 }
 
-sub data_cb { die 'override' }
+sub data { die 'override' }
 
 sub stream {
-    my ($self, $session, $req, $args) = @_;
+    my ($self, $connection, $req, $args) = @_;
     
-    my ($start, $end);
+    my $start;
 
     if (my $range = $req->header('Range')) {
-        if ($range =~ /^bytes=(\d+)-(\d*)$/) {
-            ($start, $end) = ($1, $2);
-        } elsif ($range =~ /^bytes=-(\d+)$/) {
-            ($start, $end) = (-$1);
+        if ($range =~ /^bytes=(\d+)-/) {
+            $start = $1;
+        } elsif ($range) {
+            warn qq(Cannot handle range: '$range');
         }
     }
 
-    $self->data_cb(
-        sub {
-            my ($data, $start, $end, $total) = @_;
+    my ($code, $message) = $start ? ( 206, 'Partial Content' ) : ( 200, 'OK' );
 
-            my ($code, $message) = ( 200, 'OK' );
-            my @extra_headers;
-
-            if ($self->allow_range) {
-                push @extra_headers, 'Accept-Ranges' => 'bytes';
+    my $data = $self->data($start);
+    if (ref $data eq 'CODE') {
+        my $header = HTTP::Headers->new(
+            'Connection' => 'close',
+            $start ? ( 'Content-Range' => "bytes $start-/*" ) : (),
+            $self->allow_range ? ( 'Accept-Ranges' => 'bytes' ) : (),
+        );
+        $connection->handle->push_write(
+            "HTTP/1.1 $code $message\r\n" . $header->as_string("\r\n")
+        );
+        my $write = sub {
+            my $data = shift;
+            unless (defined $data) {
+                $connection->handle->push_shutdown;
+            } else {
+                $connection->handle->push_write($data);
             }
-
-            if (defined $start && defined $end) {
-                ($code, $message) = ( 206, 'Partial Content' );
-                push @extra_headers, 'Content-Range' => sprintf 'bytes %d-%d/%s', $start, $end, $total || '*';
-            }
-
-            my $res = HTTP::Response->new(
-                $code, $message, [
-                    'Content-Type'   => 'audio/mp3',
-                    'Connection'     => 'close',
-                    'Content-Length' => length($data),
-                    @extra_headers,
-                ], $data
-            );
-            $session->handle->push_write('HTTP/1.1 ' . $res->as_string("\r\n"));
-            $session->handle->push_shutdown;
-        },
-        $start, $end
-    );
+        };
+        $data->($write);
+    } else {
+        my $res = HTTP::Response->new(
+            $code, $message, [
+                'Connection' => 'close',
+                'Content-Length' => length($data),
+                $start ? ( 'Content-Range' => "bytes $start-/*" ) : (),
+                $self->allow_range ? ( 'Accept-Ranges' => 'bytes' ) : (),
+            ], $data
+        );
+        $connection->handle->push_write("HTTP/1.1 " . $res->as_string("\r\n"));
+        $connection->handle->push_shutdown;
+    }
 }
 
 1;
