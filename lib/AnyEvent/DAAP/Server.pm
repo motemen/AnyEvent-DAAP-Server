@@ -298,7 +298,7 @@ sub _database_item {
     my $track = $self->tracks->{ $args->{item_id} }
         or return $connection->respond(404);
 
-    $track->stream($connection);
+    $track->stream($connection, $req, $args);
 }
 
 sub _format_tracks_as_dmap {

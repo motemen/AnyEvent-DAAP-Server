@@ -77,13 +77,24 @@ sub BUILD {
     # $self->daap_songcodecsubtype( 3 ); # or is this mp3?
 }
 
-sub stream {
-    my ($self, $session) = @_;
-    open my $fh, '<', $self->file or die $!;
+sub allow_range { 1 }
+
+sub data_cb {
+    my ($self, $cb, $start, $end) = @_;
+
+    open my $fh, '<', $self->file or die $!; # TODO error handling
     my $data = do { local $/; <$fh> };
-    my $res = HTTP::Response->new(200, 'OK', [ 'Content-Type' => 'audio/mp3', 'Connection' => 'close' ], $data);
-    $session->handle->push_write($res->as_string("\r\n"));
-    $session->handle->push_shutdown;
+    
+    if (!defined $start) {
+        $cb->($data);
+        return;
+    }
+
+    my $total = length $data;
+    $end ||= $total;
+    $start += $total if $start < 0;
+    $data = substr($data, $start, $end);
+    $cb->($data, $start, $end, $total);
 }
 
 1;
