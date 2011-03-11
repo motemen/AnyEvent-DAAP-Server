@@ -50,6 +50,7 @@ sub stream {
     my $start;
 
     if (my $range = $req->header('Range')) {
+        # To make things simple, assume Range: header is sent only as Range: bytes={start}-
         if ($range =~ /^bytes=(\d+)-/) {
             $start = $1;
         } elsif ($range) {
@@ -60,25 +61,8 @@ sub stream {
     my ($code, $message) = $start ? ( 206, 'Partial Content' ) : ( 200, 'OK' );
 
     my $data = $self->data($start);
-    if (ref $data eq 'CODE') {
-        my $header = HTTP::Headers->new(
-            'Connection' => 'close',
-            $start ? ( 'Content-Range' => "bytes $start-/*" ) : (),
-            $self->allow_range ? ( 'Accept-Ranges' => 'bytes' ) : (),
-        );
-        $connection->handle->push_write(
-            "HTTP/1.1 $code $message\r\n" . $header->as_string("\r\n")
-        );
-        my $write = sub {
-            my $data = shift;
-            unless (defined $data) {
-                $connection->handle->push_shutdown;
-            } else {
-                $connection->handle->push_write($data);
-            }
-        };
-        $data->($write);
-    } else {
+    my $receive_data = sub {
+        my $data = shift;
         my $res = HTTP::Response->new(
             $code, $message, [
                 'Connection' => 'close',
@@ -87,8 +71,13 @@ sub stream {
                 $self->allow_range ? ( 'Accept-Ranges' => 'bytes' ) : (),
             ], $data
         );
-        $connection->handle->push_write("HTTP/1.1 " . $res->as_string("\r\n"));
+        $connection->handle->push_write('HTTP/1.1 ' . $res->as_string("\r\n"));
         $connection->handle->push_shutdown;
+    };
+    if (ref $data eq 'CODE') {
+        $data->($receive_data);
+    } else {
+        $receive_data->($data);
     }
 }
 
