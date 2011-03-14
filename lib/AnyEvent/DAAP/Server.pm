@@ -102,18 +102,16 @@ sub publish {
 sub setup {
     my $self = shift;
 
-    $self->router->connect(
-        '/databases/{database_id}/items' => { method => '_database_items' },
+    my @route = (
+        '/databases/{database_id}/items'                           => '_database_items',
+        '/databases/{database_id}/containers'                      => '_database_containers',
+        '/databases/{database_id}/containers/{container_id}/items' => '_database_container_items',
+        '/databases/{database_id}/items/{item_id}.*'               => '_database_item',
     );
-    $self->router->connect(
-        '/databases/{database_id}/containers' => { method => '_database_containers' },
-    );
-    $self->router->connect(
-        '/databases/{database_id}/containers/{container_id}/items' => { method => '_database_container_items' },
-    );
-    $self->router->connect(
-        '/databases/{database_id}/items/{item_id}.*' => { method => '_database_item' },
-    );
+
+    while (my ($route, $method) = splice @route, 0, 2) {
+        $self->router->connect($route => { method => $method });
+    }
 
     $self->publish;
 
@@ -140,10 +138,10 @@ sub setup {
 
 sub database_updated {
     my $self = shift;
+    $self->{revision}++;
     foreach my $connection (@{ $self->connections }) {
         $connection->pause_cv->send if $connection->pause_cv;
     }
-    $self->{revision}++;
 }
 
 # XXX dmap_itemid is used as only its lower 3 bytes
@@ -174,10 +172,10 @@ sub _server_info {
             [ 'dmap.supportsautologout'    => 0 ],
             [ 'dmap.supportsupdate'        => 1 ],
             [ 'dmap.supportspersistentids' => 0 ],
-            [ 'dmap.supportsextensions'    => 1 ],
-            [ 'dmap.supportsbrowse'        => 1 ],
-            [ 'dmap.supportsquery'         => 1 ],
-            [ 'dmap.supportsindex'         => 1 ],
+            [ 'dmap.supportsextensions'    => 0 ],
+            [ 'dmap.supportsbrowse'        => 0 ],
+            [ 'dmap.supportsquery'         => 0 ],
+            [ 'dmap.supportsindex'         => 0 ],
             [ 'dmap.supportsresolve'       => 0 ],
             [ 'dmap.databasescount'        => 1 ],
         ]
@@ -189,7 +187,7 @@ sub _login {
     $connection->respond_dmap([[
         'dmap.loginresponse' => [
             [ 'dmap.status'    => 200 ],
-            [ 'dmap.sessionid' => 42 ], # XXX magic
+            [ 'dmap.sessionid' => 42 ], # XXX does not have session, magic number
         ]
     ]]);
 }
@@ -228,11 +226,11 @@ sub _databases {
             [ 'dmap.returnedcount'       => 1 ],
             [ 'dmap.listing' => [
                 [ 'dmap.listingitem' => [
-                    [ 'dmap.itemid'         =>  35 ], # XXX magic
+                    [ 'dmap.itemid'         => 1 ], # XXX magic
                     [ 'dmap.persistentid'   => $self->db_id ],
                     [ 'dmap.itemname'       => $self->name ],
                     [ 'dmap.itemcount'      => scalar keys %{ $self->tracks } ],
-                    [ 'dmap.containercount' =>  1 ],
+                    [ 'dmap.containercount' => 1 ],
                 ] ],
             ] ],
         ]
@@ -243,14 +241,14 @@ sub _database_items {
     my ($self, $connection, $req, $args) = @_;
     # $args->{database_id};
 
-    my @tracks = $self->_format_tracks_as_dmap($req, [ values %{ $self->tracks } ]);
+    my $tracks = $self->__format_tracks_as_dmap($req, [ values %{ $self->tracks } ]);
     $connection->respond_dmap([[
         'daap.databasesongs' => [
             [ 'dmap.status'              => 200 ],
             [ 'dmap.updatetype'          => 0 ],
-            [ 'dmap.specifiedtotalcount' => scalar @tracks ],
-            [ 'dmap.returnedcount'       => scalar @tracks ],
-            [ 'dmap.listing'             => \@tracks ]
+            [ 'dmap.specifiedtotalcount' => scalar @$tracks ],
+            [ 'dmap.returnedcount'       => scalar @$tracks ],
+            [ 'dmap.listing'             => $tracks ]
         ]
     ]]);
 }
@@ -279,14 +277,14 @@ sub _database_container_items {
     my $playlist = $self->playlists->{ $args->{container_id} }
         or return $connection->respond(404);
 
-    my @tracks = $self->_format_tracks_as_dmap($req, scalar $playlist->tracks);
+    my $tracks = $self->__format_tracks_as_dmap($req, scalar $playlist->tracks);
     $connection->respond_dmap([[
         'daap.playlistsongs' => [
             [ 'dmap.status'              => 200 ],
             [ 'dmap.updatetype'          => 0 ],
-            [ 'dmap.specifiedtotalcount' => scalar @tracks ],
-            [ 'dmap.returnedcount'       => scalar @tracks ],
-            [ 'dmap.listing'             => \@tracks ]
+            [ 'dmap.specifiedtotalcount' => scalar @$tracks ],
+            [ 'dmap.returnedcount'       => scalar @$tracks ],
+            [ 'dmap.listing'             => $tracks ]
         ]
     ]]);
 }
@@ -301,7 +299,7 @@ sub _database_item {
     $track->stream($connection, $req, $args);
 }
 
-sub _format_tracks_as_dmap {
+sub __format_tracks_as_dmap {
     my ($self, $req, $tracks) = @_;
 
     my @fields = ( qw(dmap.itemkind dmap.itemid dmap.itemname), split /,|%2C/i, scalar $req->uri->query_param('meta') || '' );
@@ -313,7 +311,7 @@ sub _format_tracks_as_dmap {
         ]
     }
 
-    return @tracks;
+    return \@tracks;
 }
 
 1;
@@ -322,7 +320,7 @@ __END__
 
 =head1 NAME
 
-AnyEvent::DAAP::Server -
+AnyEvent::DAAP::Server - DAAP Server implemented with AnyEvent
 
 =head1 SYNOPSIS
 
