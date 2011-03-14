@@ -16,6 +16,7 @@ __PACKAGE__->meta->make_immutable;
 
 no Any::Moose;
 
+# from Net::DAAP::Server::Track
 sub BUILD {
     my $self = shift;
     my $file = $self->file;
@@ -80,16 +81,13 @@ sub BUILD {
 sub allow_range { 1 }
 
 sub data {
-    my ($self, $start) = @_;
+    my ($self, $pos) = @_;
 
     open my $fh, '<', $self->file or die $!; # TODO error handling
     my $data = do { local $/; <$fh> };
     
-    unless (defined $start) {
-        return $data;
-    }
-
-    return substr($data, $start);
+    $pos ||= 0;
+    return substr($data, $pos);
 }
 
 1;
