@@ -94,3 +94,62 @@ sub push_response {
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+AnyEvent::DAAP::Server::Track - Base class of daap tracks
+
+=head1 DESCRIPTION
+
+This class abstractly represents one track.
+Usually you will want to use L<AnyEvent::DAAP::Server::Track::File::MP3> for local mp3 files.
+
+=head1 METHODS
+
+=over 4
+
+=item my $data = $track->data([ $pos ]);
+
+Abstract method. Should return track's music data immediately.
+If $track allows ranged request, the $pos parameter may be supplied. If so, $track should
+return data from the position at $pos byte.
+
+=item my $bool = $track->allow_range;
+
+Override this to return true if this track allows ranged request (i.e. skip/pause). Defaults to return 0.
+
+=item $track->write_data($connection, $res, $pos);
+
+Override this method if you want to send data to clients asynchronously.
+
+$connection argument is an L<AnyEvent::DAAP::Server::Connection>.
+$connection->handle is an L<AnyEvent::Handle> so call $connection->handle->push_write() this to send data.
+
+$res argument is partially filled L<HTTP::Response>, without $res->content and $res->content_length.
+
+$pos argument is requested start-position of music data or undef.
+
+After writing all data, you should send $connection->handle->push_shutdown().
+
+=item $track->daap_***, $track->dmap_***
+
+Read L<AnyEvent::DAAP::Server::Track::File::MP3>'s source to grab what these mean.
+
+=back
+
+=head1 AUTHOR
+
+motemen E<lt>motemen@gmail.comE<gt>
+
+=head1 SEE ALSO
+
+L<AnyEvent::DAAP::Server::Track::File::MP3>
+
+=head1 LICENSE
+
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself.
+
+=cut

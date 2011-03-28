@@ -324,17 +324,62 @@ AnyEvent::DAAP::Server - DAAP Server implemented with AnyEvent
 
 =head1 SYNOPSIS
 
+  use AnyEvent;
   use AnyEvent::DAAP::Server;
+  use AnyEvent::DAAP::Server::Track::File::MP3;
+  use File::Find::Rule;
+
+  my $daap = AnyEvent::DAAP::Server->new(port => 3689);
+
+  foreach my $file (find name => '*.mp3', in => '.') {
+      my $track = AnyEvent::DAAP::Server::Track::File::MP3->new(file => $file);
+      $daap->add_track($track);
+  }
+
+  $daap->setup;
+
+  AE::cv->wait;
+
 
 =head1 DESCRIPTION
 
-AnyEvent::DAAP::Server is
+AnyEvent::DAAP::Server is a DAAP Server implementation on AnyEvent.
+It is like L<Net::DAAP::Server>, but does not find files automatically (see SYNOPSIS.)
+
+=head1 METHODS
+
+=over 4
+
+=item my $daap = AnyEvent::DAAP::Server->new(name => 'AnyEvent::DAAP::Server', port => 3689);
+
+Create new DAAP server instance.
+
+=item $daap->setup;
+
+Publish rendezvous service and setup handlers.
+Afterwards you will want to call AnyEvent::CondVar's recv().
+
+=item $daap->add_track($track);
+
+Add a new track that is an instance of L<AnyEvent::DAAP::Server::Track>.
+
+=item $daap->add_playlist($playlist);
+
+Add a new playlist that is an instance of L<AnyEvent::DAAP::Server::Playlist>.
+
+=item $daap->database_updated;
+
+After add_track() or add_playlist(), call this method to notify clients that the database is updated.
+
+=back
 
 =head1 AUTHOR
 
 motemen E<lt>motemen@gmail.comE<gt>
 
 =head1 SEE ALSO
+
+L<Net::DAAP::Server>
 
 =head1 LICENSE
 
