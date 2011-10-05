@@ -19,3 +19,6 @@
 ^\.shipit$
 ^\.git/
 \.sw[po]$
+^[^/]*\.mp3$
+^sketch/
+\.prove
