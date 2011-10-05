@@ -22,3 +22,5 @@
 ^[^/]*\.mp3$
 ^sketch/
 \.prove
+local/
+.gitignore
